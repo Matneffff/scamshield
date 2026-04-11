@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { GoogleGenAI } from '@google/genai';
 import { motion, AnimatePresence } from 'motion/react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { 
@@ -315,7 +314,7 @@ export default function App() {
   const [submitSuccess, setSubmitSuccess] = useState(false);
   const [selectedReport, setSelectedReport] = useState<typeof RECENT_REPORTS[0] | null>(null);
 
-  const gemini = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+  const BACKEND_URL = 'http://localhost:3001';
 
   const handleAnalyze = async (forcedResult?: RiskLevel) => {
     if (!inputValue.trim() && activeTab !== 'image' && !forcedResult) return;
@@ -334,51 +333,20 @@ export default function App() {
       return;
     }
 
-    const prompt = `You are ScamShield, a Malaysian digital scam detection AI. Analyze the following input and classify it.
-
-Input type: ${activeTab}
-Input: "${inputValue}"
-
-Malaysian scam context:
-- Common scam types: Macau Scam, APK Phishing, Job Scam, Love Scam, Investment Scam, Parcel Scam, Bank Impersonation, LHDN Tax Scam, PDRM Impersonation
-- Key authorities: PDRM (police), BNM (Bank Negara Malaysia), MCMC (communications regulator), NSRC hotline 997
-- Red flags: urgency/threats, requests for money/OTP/personal info, APK download links, unverified shortened URLs, impersonating govt agencies
-
-Respond ONLY with a valid JSON object — no markdown, no code block, no explanation. Use this exact schema:
-{
-  "level": "safe" | "suspicious" | "danger",
-  "title": "VERDICT IN ALL CAPS (4-6 words)",
-  "scamType": "Specific scam category or 'None Detected'",
-  "confidence": "e.g. 94%",
-  "description": "2-sentence explanation of the verdict specific to this input.",
-  "flags": ["specific red flag 1", "specific red flag 2"],
-  "actions": [
-    { "step": 1, "title": "Action title.", "desc": "Action description." }
-  ]
-}
-
-Rules:
-- level "danger": clear scam, threatening/urgent tone, requests money, personal data, or APK — provide 3 actions, last action must mention NSRC (997)
-- level "suspicious": some red flags but not conclusive — provide 2 actions
-- level "safe": no scam indicators — provide 1 action with step "✓"
-- flags: 2–4 specific red flags for the actual input (not generic), or ["No suspicious patterns detected"] for safe
-- Be specific to Malaysian context and the actual content of the input`;
-
     try {
-      const response = await gemini.models.generateContent({
-        model: 'gemini-2.0-flash',
-        contents: prompt,
+      const response = await fetch(`${BACKEND_URL}/api/analyze`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ inputType: activeTab, content: inputValue, language: lang }),
       });
 
-      const raw = response.text?.trim() ?? '';
-      // Strip markdown code fences if Gemini wraps the JSON
-      const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
-      const parsed = JSON.parse(cleaned) as AnalysisResult;
+      if (!response.ok) throw new Error(`Backend error: ${response.status}`);
 
+      const parsed = await response.json() as AnalysisResult;
       setAiResult(parsed);
       setResultLevel(parsed.level);
     } catch (err) {
-      console.error('Gemini API error:', err);
+      console.error('Analysis error:', err);
       setAiError(true);
       // Keyword fallback so UI never breaks
       const lower = inputValue.toLowerCase();
