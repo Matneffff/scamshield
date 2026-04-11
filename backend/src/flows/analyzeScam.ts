@@ -64,7 +64,7 @@ Return ONLY valid JSON (no markdown):
   "initialRisk": "low | medium | high"
 }`;
 
-    const { text } = await ai.generate({ model: 'googleai/gemini-2.0-flash-lite', prompt });
+    const { text } = await ai.generate({ model: 'googleai/gemini-2.5-flash', prompt });
     const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
     return JSON.parse(cleaned);
   }
@@ -116,7 +116,7 @@ Return ONLY valid JSON (no markdown):
   "knownPatternHit": true | false
 }`;
 
-    const { text } = await ai.generate({ model: 'googleai/gemini-2.0-flash-lite', prompt });
+    const { text } = await ai.generate({ model: 'googleai/gemini-2.5-flash', prompt });
     const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
     return JSON.parse(cleaned);
   }
@@ -186,7 +186,7 @@ Return ONLY valid JSON (no markdown):
   ]
 }`;
 
-    const { text } = await ai.generate({ model: 'googleai/gemini-2.0-flash', prompt });
+    const { text } = await ai.generate({ model: 'googleai/gemini-2.5-flash', prompt });
     const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
     return JSON.parse(cleaned);
   }
