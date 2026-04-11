@@ -7,6 +7,8 @@ export const AnalyzeInputSchema = z.object({
   inputType: z.enum(['text', 'url', 'phone', 'image']),
   content: z.string().min(1),
   language: z.enum(['en', 'bm']).default('en'),
+  imageBase64: z.string().optional(),
+  imageMimeType: z.string().optional(),
 });
 
 export const AnalyzeOutputSchema = z.object({
@@ -41,30 +43,66 @@ const classifyInput = ai.defineTool(
     inputSchema: z.object({
       inputType: z.string(),
       content: z.string(),
+      imageBase64: z.string().optional(),
+      imageMimeType: z.string().optional(),
     }),
     outputSchema: z.object({
       category: z.string(),
       signals: z.array(z.string()),
       urgencyScore: z.number().min(0).max(10),
       initialRisk: z.enum(['low', 'medium', 'high']),
+      imageDescription: z.string().optional(),
     }),
   },
-  async ({ inputType, content }) => {
-    const prompt = `You are Agent 1 (Input Classifier) of the ScamShield pipeline.
+  async ({ inputType, content, imageBase64, imageMimeType }) => {
+    const jsonSchema = `Return ONLY valid JSON (no markdown):
+{
+  "category": "one of: macau_scam | apk_phishing | job_scam | investment_scam | love_scam | parcel_scam | bank_impersonation | lhdn_scam | pdrm_impersonation | unknown",
+  "signals": ["signal1", "signal2"],
+  "urgencyScore": 0-10,
+  "initialRisk": "low | medium | high",
+  "imageDescription": "brief description of what the screenshot shows (image inputs only)"
+}`;
+
+    let generateInput;
+
+    if (inputType === 'image' && imageBase64) {
+      // Multimodal: image + text prompt
+      generateInput = {
+        model: 'googleai/gemini-2.5-flash',
+        messages: [{
+          role: 'user' as const,
+          content: [
+            {
+              media: {
+                url: `data:${imageMimeType ?? 'image/jpeg'};base64,${imageBase64}`,
+                contentType: imageMimeType ?? 'image/jpeg',
+              },
+            },
+            {
+              text: `You are Agent 1 (Input Classifier) of the ScamShield pipeline.
+
+Analyze this screenshot for Malaysian scam signals. Look for: suspicious messages, fake websites, phishing UI, scam offers, impersonation of PDRM/BNM/MCMC, APK download prompts, urgency tactics, requests for money or personal info.
+
+${jsonSchema}`,
+            },
+          ],
+        }],
+      };
+    } else {
+      generateInput = {
+        model: 'googleai/gemini-2.5-flash' as const,
+        prompt: `You are Agent 1 (Input Classifier) of the ScamShield pipeline.
 
 Analyze this ${inputType} input for Malaysian scam signals.
 
 Input: "${content}"
 
-Return ONLY valid JSON (no markdown):
-{
-  "category": "one of: macau_scam | apk_phishing | job_scam | investment_scam | love_scam | parcel_scam | bank_impersonation | lhdn_scam | pdrm_impersonation | unknown",
-  "signals": ["signal1", "signal2"],
-  "urgencyScore": 0-10,
-  "initialRisk": "low | medium | high"
-}`;
+${jsonSchema}`,
+      };
+    }
 
-    const { text } = await ai.generate({ model: 'googleai/gemini-2.5-flash', prompt });
+    const { text } = await ai.generate(generateInput);
     const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
     return JSON.parse(cleaned);
   }
@@ -200,15 +238,20 @@ export const analyzeScamFlow = ai.defineFlow(
     inputSchema: AnalyzeInputSchema,
     outputSchema: AnalyzeOutputSchema,
   },
-  async ({ inputType, content, language }) => {
-    // Agent 1 — Classify
-    const classification = await classifyInput({ inputType, content });
+  async ({ inputType, content, language, imageBase64, imageMimeType }) => {
+    // Agent 1 — Classify (multimodal for images)
+    const classification = await classifyInput({ inputType, content, imageBase64, imageMimeType });
+
+    // Use image description for downstream agents if available
+    const textContent = classification.imageDescription
+      ? `[Screenshot: ${classification.imageDescription}]`
+      : content;
 
     // Agent 2 — Match patterns
     const patternMatch = await matchScamPatterns({
       category: classification.category,
       signals: classification.signals,
-      content,
+      content: textContent,
     });
 
     // Agent 3 — Generate verdict
@@ -218,7 +261,7 @@ export const analyzeScamFlow = ai.defineFlow(
       matches: patternMatch.matches,
       confidence: patternMatch.confidence,
       initialRisk: classification.initialRisk,
-      content,
+      content: textContent,
       language,
     });
 

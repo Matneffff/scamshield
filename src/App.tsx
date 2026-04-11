@@ -313,11 +313,22 @@ export default function App() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitSuccess, setSubmitSuccess] = useState(false);
   const [selectedReport, setSelectedReport] = useState<typeof RECENT_REPORTS[0] | null>(null);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
 
   const BACKEND_URL = 'http://localhost:3001';
 
+  const handleImageSelect = (file: File) => {
+    if (!file.type.startsWith('image/')) return;
+    setImageFile(file);
+    const reader = new FileReader();
+    reader.onload = (e) => setImagePreview(e.target?.result as string);
+    reader.readAsDataURL(file);
+  };
+
   const handleAnalyze = async (forcedResult?: RiskLevel) => {
-    if (!inputValue.trim() && activeTab !== 'image' && !forcedResult) return;
+    const canAnalyze = activeTab === 'image' ? !!imageFile : !!inputValue.trim();
+    if (!canAnalyze && !forcedResult) return;
 
     setIsAnalyzing(true);
     setResultLevel(null);
@@ -334,10 +345,30 @@ export default function App() {
     }
 
     try {
+      let content = inputValue;
+      let imageBase64: string | undefined;
+
+      if (activeTab === 'image' && imageFile) {
+        imageBase64 = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            const dataUrl = e.target?.result as string;
+            resolve(dataUrl.split(',')[1]); // strip data:image/...;base64, prefix
+          };
+          reader.readAsDataURL(imageFile);
+        });
+        content = imageFile.name;
+      }
+
       const response = await fetch(`${BACKEND_URL}/api/analyze`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ inputType: activeTab, content: inputValue, language: lang }),
+        body: JSON.stringify({
+          inputType: activeTab,
+          content,
+          language: lang,
+          ...(imageBase64 && { imageBase64, imageMimeType: imageFile!.type }),
+        }),
       });
 
       if (!response.ok) throw new Error(`Backend error: ${response.status}`);
@@ -348,15 +379,7 @@ export default function App() {
     } catch (err) {
       console.error('Analysis error:', err);
       setAiError(true);
-      // Keyword fallback so UI never breaks
-      const lower = inputValue.toLowerCase();
-      if (lower.includes('bank') || lower.includes('urgent') || lower.includes('pdrm') || lower.includes('apk') || lower.includes('transfer')) {
-        setResultLevel('danger');
-      } else if (lower.includes('offer') || lower.includes('win') || lower.includes('http') || lower.includes('free')) {
-        setResultLevel('suspicious');
-      } else {
-        setResultLevel('safe');
-      }
+      setResultLevel('suspicious');
     } finally {
       setIsAnalyzing(false);
     }
@@ -379,6 +402,8 @@ export default function App() {
     setResultLevel(null);
     setAiResult(null);
     setAiError(false);
+    setImageFile(null);
+    setImagePreview(null);
   };
 
   const handleContributeSubmit = (e: React.FormEvent) => {
@@ -539,13 +564,33 @@ export default function App() {
                     {/* Input Area */}
                     <div className="mb-4">
                       {activeTab === 'image' ? (
-                        <div className="border-2 border-dashed border-slate-700 hover:border-cyan-500/50 bg-slate-950/50 rounded-xl p-12 flex flex-col items-center justify-center text-center transition-colors cursor-pointer group">
-                          <div className="w-12 h-12 rounded-full bg-cyan-500/10 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                            <Upload className="w-6 h-6 text-cyan-400" />
-                          </div>
-                          <p className="text-slate-300 font-medium mb-1">{t.uploadDrag}</p>
-                          <p className="text-slate-500 text-sm">{t.uploadSub}</p>
-                        </div>
+                        <label
+                          className="border-2 border-dashed border-slate-700 hover:border-cyan-500/50 bg-slate-950/50 rounded-xl p-8 flex flex-col items-center justify-center text-center transition-colors cursor-pointer group block"
+                          onDragOver={(e) => e.preventDefault()}
+                          onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleImageSelect(f); }}
+                        >
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImageSelect(f); }}
+                          />
+                          {imagePreview ? (
+                            <div className="w-full">
+                              <img src={imagePreview} alt="Preview" className="max-h-48 mx-auto rounded-lg object-contain mb-3" />
+                              <p className="text-cyan-400 text-sm font-medium">{imageFile?.name}</p>
+                              <p className="text-slate-500 text-xs mt-1">Click to change image</p>
+                            </div>
+                          ) : (
+                            <>
+                              <div className="w-12 h-12 rounded-full bg-cyan-500/10 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                                <Upload className="w-6 h-6 text-cyan-400" />
+                              </div>
+                              <p className="text-slate-300 font-medium mb-1">{t.uploadDrag}</p>
+                              <p className="text-slate-500 text-sm">{t.uploadSub}</p>
+                            </>
+                          )}
+                        </label>
                       ) : (
                         <textarea
                           value={inputValue}
@@ -571,7 +616,7 @@ export default function App() {
                     {/* Action Button */}
                     <button
                       onClick={() => handleAnalyze()}
-                      disabled={!inputValue.trim() && activeTab !== 'image'}
+                      disabled={activeTab === 'image' ? !imageFile : !inputValue.trim()}
                       className="w-full py-4 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-semibold text-lg shadow-[0_0_20px_rgba(6,182,212,0.3)] hover:shadow-[0_0_30px_rgba(6,182,212,0.5)] transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:from-cyan-500 disabled:hover:to-blue-600 disabled:hover:shadow-[0_0_20px_rgba(6,182,212,0.3)] flex items-center justify-center gap-2"
                     >
                       <Search className="w-5 h-5" />
