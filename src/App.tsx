@@ -487,16 +487,26 @@ export default function App() {
           <>
             {/* Hero Section */}
             <div className="text-center mb-12">
-              <motion.div 
+              <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-950/40 border border-blue-800/40 text-blue-400 text-xs font-medium mb-6"
+                className="flex flex-wrap items-center justify-center gap-2 mb-6"
               >
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-950/40 border border-blue-800/40 text-blue-400 text-xs font-medium">
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+                  </span>
+                  Gemini 2.5 Flash
                 </span>
-                {t.poweredBy}
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-950/40 border border-cyan-800/40 text-cyan-400 text-xs font-medium">
+                  <Database className="w-3 h-3" />
+                  Vertex AI Search
+                </span>
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-950/40 border border-indigo-800/40 text-indigo-400 text-xs font-medium">
+                  <Activity className="w-3 h-3" />
+                  Firebase Genkit
+                </span>
               </motion.div>
               <motion.h1 
                 initial={{ opacity: 0, y: 20 }}
@@ -746,6 +756,23 @@ export default function App() {
                       </div>
                     </div>
 
+                    {/* RAG Sources */}
+                    {result.pipeline?.ragMatches?.length > 0 && (
+                      <div className="mb-6">
+                        <h4 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+                          <Database className="w-4 h-4 text-cyan-400" /> Matched Patterns (Vertex AI Search)
+                        </h4>
+                        <div className="space-y-2">
+                          {result.pipeline.ragMatches.slice(0, 3).map((match: string, idx: number) => (
+                            <div key={idx} className="flex items-start gap-2 px-3 py-2 rounded-lg bg-cyan-950/20 border border-cyan-800/20 text-xs text-cyan-300/80">
+                              <span className="text-cyan-500 shrink-0 mt-0.5">›</span>
+                              <span>{match}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     {/* Footer Actions */}
                     <div className="flex flex-col sm:flex-row gap-4">
                       <button 
@@ -778,7 +805,10 @@ export default function App() {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-2">
               <div>
                 <h2 className="text-3xl font-bold text-white">{t.trendsTitle}</h2>
-                <p className="text-slate-400">{t.trendsDesc}</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-slate-400">{t.trendsDesc}</p>
+                  <span className="px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs font-medium">Sample Data</span>
+                </div>
               </div>
               <div className="flex items-center gap-3">
                 <button className="flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-900/50 border border-white/5 text-slate-300 hover:bg-white/5 transition-colors">
@@ -993,7 +1023,7 @@ export default function App() {
       {/* Footer */}
       <footer className="border-t border-slate-800/50 mt-12 py-8 text-center text-slate-500 text-sm">
         <p>{t.footerText}</p>
-        <p className="mt-2">Team HyperArc | PROJECT 2030: MyAI Future Hackathon</p>
+        <p className="mt-2 text-slate-600">Built with Gemini 2.5 Flash · Vertex AI Search · Firebase Genkit</p>
       </footer>
 
       {/* Contribute Modal */}
