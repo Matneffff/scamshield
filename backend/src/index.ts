@@ -11,7 +11,15 @@ import { analyzeScamFlow, AnalyzeInputSchema } from './flows/analyzeScam.js';
 const app = express();
 const PORT = process.env.PORT ?? 3001;
 
-app.use(cors({ origin: ['http://localhost:3000', 'http://localhost:5173'] }));
+app.use(cors({
+  origin: [
+    'http://localhost:3000',
+    'http://localhost:5173',
+    /\.web\.app$/,
+    /\.firebaseapp\.com$/,
+    /\.run\.app$/,
+  ],
+}));
 app.use(express.json({ limit: '10mb' }));
 
 // Health check
