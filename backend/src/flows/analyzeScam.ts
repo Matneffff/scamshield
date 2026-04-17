@@ -1,5 +1,6 @@
 import { z } from 'genkit';
 import { ai } from '../genkit.js';
+import { SearchServiceClient } from '@google-cloud/discoveryengine';
 
 // ─── Schemas ────────────────────────────────────────────────────────────────
 
@@ -108,13 +109,59 @@ ${jsonSchema}`,
   }
 );
 
+// ─── Vertex AI Search client ─────────────────────────────────────────────────
+
+let searchClient: SearchServiceClient | null = null;
+
+function getSearchClient(): SearchServiceClient {
+  if (!searchClient) searchClient = new SearchServiceClient();
+  return searchClient;
+}
+
+async function queryVertexSearch(query: string): Promise<string[]> {
+  const project = process.env.VERTEX_PROJECT_ID;
+  const location = process.env.VERTEX_LOCATION ?? 'global';
+  const engineId = process.env.VERTEX_ENGINE_ID;
+
+  if (!project || !engineId) throw new Error('Vertex AI Search not configured');
+
+  const servingConfig = `projects/${project}/locations/${location}/collections/default_collection/engines/${engineId}/servingConfigs/default_search`;
+
+  const [response] = await getSearchClient().search(
+    {
+      servingConfig,
+      query,
+      pageSize: 5,
+      queryExpansionSpec: { condition: 'AUTO' as const },
+      spellCorrectionSpec: { mode: 'AUTO' as const },
+    },
+    { autoPaginate: false }
+  );
+
+  const results: string[] = [];
+  for (const result of (response as any) ?? []) {
+    const doc = result.document;
+    if (!doc) continue;
+    const fields = doc.derivedStructData?.fields ?? {};
+
+    // Try snippets first, then title, then link
+    const snippet = fields['snippets']?.listValue?.values?.[0]?.structValue?.fields?.['snippet']?.stringValue;
+    const title = fields['title']?.stringValue;
+    const link = fields['link']?.stringValue;
+
+    const text = snippet ?? title ?? link ?? '';
+    if (text) results.push(text);
+  }
+  return results;
+}
+
 // ─── Agent 2: Scam Pattern Matcher ───────────────────────────────────────────
-// Cross-references known Malaysian scam patterns (RAG stub — replace with Vertex AI Search)
+// Cross-references known Malaysian scam patterns via Vertex AI Search RAG
 
 const matchScamPatterns = ai.defineTool(
   {
     name: 'matchScamPatterns',
-    description: 'Matches input against known Malaysian scam patterns database',
+    description: 'Matches input against PDRM/BNM/MCMC scam pattern database via Vertex AI Search',
     inputSchema: z.object({
       category: z.string(),
       signals: z.array(z.string()),
@@ -127,36 +174,48 @@ const matchScamPatterns = ai.defineTool(
     }),
   },
   async ({ category, signals, content }) => {
-    // TODO: Replace with Vertex AI Search RAG query against PDRM/BNM/MCMC corpus
-    // const results = await vertexAiSearch.query({ datastore: DATASTORE_ID, query: content });
+    // Query Vertex AI Search with category + key signals
+    const searchQuery = `${category} ${signals.slice(0, 3).join(' ')} ${content.slice(0, 200)}`;
+    let ragSnippets: string[] = [];
+
+    try {
+      ragSnippets = await queryVertexSearch(searchQuery);
+    } catch (err) {
+      console.warn('[Agent 2] Vertex AI Search query failed, falling back to LLM:', err);
+    }
+
+    const ragContext = ragSnippets.length > 0
+      ? `RAG results from PDRM/BNM/MCMC database:\n${ragSnippets.map((s, i) => `${i + 1}. ${s}`).join('\n')}`
+      : 'No RAG results available — use built-in knowledge only.';
 
     const prompt = `You are Agent 2 (Scam Pattern Matcher) of the ScamShield pipeline.
 
-You have access to Malaysian scam pattern databases from PDRM, BNM, and MCMC.
+${ragContext}
 
 Category detected: ${category}
 Signals found: ${signals.join(', ')}
 Original input: "${content}"
 
-Known Malaysian scam patterns to cross-reference:
-- Macau Scam: PDRM/BNM impersonation, frozen account threats, urgent transfer to "safe" account
-- APK Phishing: PosLaju/customs fake SMS, APK download link, parcel tracking scam
-- Job Scam: part-time job offer, RM/day commission, upfront registration fee
-- Investment Scam: guaranteed high returns, crypto/forex, "exclusive" group
-- Love Scam: online relationship, financial emergency, overseas partner
-- LHDN Scam: tax arrears, immediate payment or arrest
-- Bank Impersonation: account suspended, verify OTP, call "bank officer"
+Based on the RAG results and your knowledge of Malaysian scams, identify specific pattern matches.
 
 Return ONLY valid JSON (no markdown):
 {
-  "matches": ["pattern match 1", "pattern match 2"],
+  "matches": ["specific pattern match 1", "specific pattern match 2"],
   "confidence": 0-100,
   "knownPatternHit": true | false
 }`;
 
     const { text } = await ai.generate({ model: 'googleai/gemini-2.5-flash', prompt });
     const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
-    return JSON.parse(cleaned);
+    const result = JSON.parse(cleaned);
+
+    // Append actual RAG snippets to matches for transparency
+    if (ragSnippets.length > 0) {
+      result.matches = [...result.matches, ...ragSnippets.slice(0, 2)];
+      result.knownPatternHit = true;
+    }
+
+    return result;
   }
 );
 
