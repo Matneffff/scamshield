@@ -316,7 +316,7 @@ export default function App() {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
 
-  const BACKEND_URL = import.meta.env.VITE_BACKEND_URL ?? 'https://scamshield-backend-283232785197.asia-southeast1.run.app';
+  const BACKEND_URL = import.meta.env.VITE_BACKEND_URL ?? 'https://scamshield-backend-fkkdy7nsga-as.a.run.app';
 
   const handleImageSelect = (file: File) => {
     if (!file.type.startsWith('image/')) return;
